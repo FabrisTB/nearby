@@ -1,4 +1,4 @@
-// Copyright 2020 Google LLC
+// Copyright 2022 Google LLC
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -12,25 +12,24 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef PLATFORM_IMPL_IOS_SINGLE_THREAD_EXECUTOR_H_
-#define PLATFORM_IMPL_IOS_SINGLE_THREAD_EXECUTOR_H_
+#import <Foundation/Foundation.h>
+
+#import "connections/clients/swift/NearbyCoreAdapter/Sources/Public/NearbyCoreAdapter/GNCDiscoveryOptions.h"
+
 #ifdef __cplusplus
-
-#import "internal/platform/implementation/ios/multi_thread_executor.h"
-
 namespace location {
 namespace nearby {
-namespace ios {
-
-class SingleThreadExecutor : public MultiThreadExecutor {
- public:
-  SingleThreadExecutor() : MultiThreadExecutor(1) {}
-  ~SingleThreadExecutor() override = default;
-};
-
-}  // namespace ios
+namespace connections {
+class DiscoveryOptions;
+}
 }  // namespace nearby
 }  // namespace location
-
 #endif
-#endif  // PLATFORM_IMPL_IOS_SINGLE_THREAD_EXECUTOR_H_
+
+@interface GNCDiscoveryOptions ()
+
+#ifdef __cplusplus
+- (location::nearby::connections::DiscoveryOptions)toCpp;
+#endif
+
+@end

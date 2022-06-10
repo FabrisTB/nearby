@@ -2,14 +2,51 @@
 // The swift-tools-version declares the minimum version of Swift required to build this package.
 import PackageDescription
 
+let commonExclude = [
+  "compiled_proto",
+  "connections/BUILD",
+  "connections/discovery_options.cc",
+  "connections/status.cc",
+  "connections/listeners_test.cc",
+  "connections/advertising_options.cc",
+  "connections/payload.cc",
+  "connections/strategy_test.cc",
+  "connections/connection_options.cc",
+  "connections/core_test.cc",
+  "connections/status_test.cc",
+  "connections/core.cc",
+  "connections/strategy.cc",
+  "connections/payload_test.cc",
+  "connections/implementation",
+  "connections/samples",
+  "docs",
+  "embedded",
+  "internal",
+  "presence",
+  "proto",
+  "third_party",
+  "CONTRIBUTING.md",
+  "LICENSE",
+  "README.md",
+  "WORKSPACE",
+]
+
 let package = Package(
   name: "NearbyConnections",
   products: [
     // Products define the executables and libraries a package produces, and make them visible to other packages.
     .library(
+      name: "NearbyCoreAdapter",
+      targets: ["NearbyCoreAdapter"]
+    ),
+    .library(
       name: "NearbyConnections",
       targets: ["NearbyConnections"]
-    )
+    ),
+    .library(
+      name: "NearbyConnections2",
+      targets: ["NearbyConnections2"]
+    ),
   ],
   dependencies: [
     // Dependencies declare other packages that this package depends on.
@@ -360,7 +397,7 @@ let package = Package(
       ]
     ),
     .target(
-      name: "NearbyConnections",
+      name: "internal",
       dependencies: [
         "google-toolbox-for-mac",
         "smhasher",
@@ -372,7 +409,7 @@ let package = Package(
       exclude: [
         "presence",
         "embedded",
-        "connections/clients/windows",
+        "connections/clients",
         "connections/samples",
         "docs",
         "internal/platform/implementation/g3",
@@ -385,7 +422,6 @@ let package = Package(
         "README.md",
         "WORKSPACE",
         // build files
-        "connections/clients/ios/BUILD",
         "connections/implementation/analytics/BUILD",
         "connections/implementation/proto/BUILD",
         "connections/implementation/proto/CMakeLists.txt",
@@ -410,7 +446,6 @@ let package = Package(
         // tests
         "connections/listeners_test.cc",
         "connections/strategy_test.cc",
-        "connections/clients/ios/BuildTests",
         "connections/implementation/offline_frames_test.cc",
         "connections/implementation/offline_service_controller_test.cc",
         "connections/implementation/encryption_runner_test.cc",
@@ -426,7 +461,6 @@ let package = Package(
         "connections/implementation/analytics/analytics_recorder_test.cc",
         "connections/implementation/mediums/ble_v2_test.cc",
         "connections/implementation/mediums/ble_v2/bloom_filter_test.cc",
-        "connections/implementation/mediums/ble_v2/ble_peripheral_test.cc",
         "connections/implementation/mediums/ble_v2/ble_packet_test.cc",
         "connections/implementation/mediums/ble_v2/ble_advertisement_test.cc",
         "connections/implementation/mediums/ble_v2/advertisement_read_result_test.cc",
@@ -524,6 +558,23 @@ let package = Package(
         "internal",
         "proto",
       ],
+      cSettings: [
+        .headerSearchPath("./"),
+        .headerSearchPath("compiled_proto/"),
+        .define("NO_WEBRTC"),
+        .define("NEARBY_SWIFTPM"),
+      ]
+    ),
+    .target(
+      name: "NearbyConnections",
+      dependencies: ["internal"],
+      path: ".",
+      exclude: [
+        "connections/clients/windows",
+        "connections/clients/swift",
+        "connections/clients/ios/BUILD",
+        "connections/clients/ios/BuildTests",
+      ] + commonExclude,
       publicHeadersPath: "connections/clients/ios/Public",
       cSettings: [
         .headerSearchPath("./"),
@@ -537,10 +588,57 @@ let package = Package(
         .linkedFramework("CoreFoundation"),
       ]
     ),
+    .target(
+      name: "NearbyCoreAdapter",
+      dependencies: ["internal"],
+      path: ".",
+      exclude: [
+        "connections/clients/windows",
+        "connections/clients/ios",
+        "connections/clients/swift/NearbyConnections",
+        "connections/clients/swift/NearbyCoreAdapter/BUILD",
+        "connections/clients/swift/NearbyCoreAdapter/Tests",
+      ] + commonExclude,
+      sources: [
+        "connections/clients/swift/NearbyCoreAdapter/Sources"
+      ],
+      publicHeadersPath: "connections/clients/swift/NearbyCoreAdapter/Sources/Public",
+      cSettings: [
+        .headerSearchPath("./"),
+        .headerSearchPath("compiled_proto/"),
+        .define("NO_WEBRTC"),
+        .define("NEARBY_SWIFTPM"),
+      ]
+    ),
+    .target(
+      name: "NearbyConnections2",
+      dependencies: ["NearbyCoreAdapter"],
+      path: ".",
+      exclude: [
+        "connections/clients/windows",
+        "connections/clients/ios",
+        "connections/clients/swift/NearbyCoreAdapter",
+        "connections/clients/swift/NearbyConnections/BUILD",
+        "connections/clients/swift/NearbyConnections/Tests",
+      ] + commonExclude,
+      sources: [
+        "connections/clients/swift/NearbyConnections/Sources"
+      ]
+    ),
     .testTarget(
       name: "BuildTests",
       dependencies: ["NearbyConnections"],
       path: "connections/clients/ios/BuildTests"
+    ),
+    .testTarget(
+      name: "NearbyCoreAdapterTests",
+      dependencies: ["NearbyCoreAdapter"],
+      path: "connections/clients/swift/NearbyCoreAdapter/Tests"
+    ),
+    .testTarget(
+      name: "NearbyConnections2Tests",
+      dependencies: ["NearbyConnections2"],
+      path: "connections/clients/swift/NearbyConnections/Tests"
     ),
   ],
   cLanguageStandard: .c99,

@@ -15,6 +15,7 @@ licenses(["notice"])
 
 package(default_visibility = [
     "//connections/clients/ios:__subpackages__",
+    "//connections/clients/swift:__subpackages__",
     "//internal/platform/implementation/ios:__subpackages__",
 ])
 
@@ -49,11 +50,26 @@ objc_library(
     deps = [
         ":Platform_cc",
         ":Shared",
+        "//base",
+        "//third_party/apple_frameworks:CoreBluetooth",
+        "//third_party/apple_frameworks:Foundation",
+        "//internal/platform:base",
+        "//internal/platform:cancellation_flag",
+        "//internal/platform/implementation:comm",
         "//internal/platform/implementation:platform",
         "//internal/platform/implementation:types",
         "//internal/platform/implementation/ios/Mediums",
         "//internal/platform/implementation/shared:file",
         "//third_party/objective_c/google_toolbox_for_mac:GTM_Logger",
+        "@com_google_absl//absl/base:core_headers",
+        "@com_google_absl//absl/container:common",
+        "@com_google_absl//absl/container:flat_hash_map",
+        "@com_google_absl//absl/memory",
+        "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/strings:str_format",
+        "@com_google_absl//absl/synchronization",
+        "@com_google_absl//absl/time",
+        "@com_google_absl//absl/types:optional",
     ],
 )
 
@@ -66,7 +82,8 @@ objc_library(
         "GNCUtils.h",
     ],
     deps = [
-        "@aappleby_smhasher//:libmurmur3",
+        "//third_party/apple_frameworks:CommonCrypto",
+        "//third_party/apple_frameworks:Foundation",
     ],
 )
 
