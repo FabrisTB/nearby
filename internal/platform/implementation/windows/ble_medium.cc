@@ -14,6 +14,7 @@
 
 #include "internal/platform/implementation/windows/ble_medium.h"
 
+#include <chrono>  // NOLINT
 #include <future>  // NOLINT
 #include <memory>
 #include <string>
@@ -29,6 +30,7 @@
 #include "winrt/Windows.Devices.Bluetooth.h"
 #include "winrt/Windows.Foundation.Collections.h"
 #include "winrt/Windows.Storage.Streams.h"
+#include "winrt/base.h"
 
 namespace location {
 namespace nearby {
@@ -109,6 +111,10 @@ using ::winrt::Windows::Storage::Streams::DataReader;
 // Writes data to an output stream.
 // https://docs.microsoft.com/en-us/uwp/api/windows.storage.streams.datawriter?view=winrt-22621
 using ::winrt::Windows::Storage::Streams::DataWriter;
+
+// Represents a time interval as a signed 64-bit integer value.
+// https://docs.microsoft.com/en-us/uwp/api/windows.foundation.timespan?view=winrt-22621
+using ::winrt::Windows::Foundation::TimeSpan;
 
 template <typename T>
 using IVector = winrt::Windows::Foundation::Collections::IVector<T>;
@@ -222,14 +228,19 @@ bool BleMedium::StartScanning(
 
   NEARBY_LOGS(INFO) << "Windows Ble StartScanning: service_id=" << service_id;
 
+  if (is_watcher_started_) {
+    NEARBY_LOGS(WARNING)
+        << "BLE cannot start to scan again when it is running.";
+    return false;
+  }
+
   service_id_ = service_id;
   advertisement_received_callback_ = std::move(callback);
 
+  watcher_ = BluetoothLEAdvertisementWatcher();
   watcher_token_ = watcher_.Stopped({this, &BleMedium::WatcherHandler});
   advertisement_received_token_ =
       watcher_.Received({this, &BleMedium::AdvertisementReceivedHandler});
-
-  is_watcher_started_ = false;
 
   watcher_started_promise_ = std::promise<WatcherState>();
 
@@ -242,22 +253,37 @@ bool BleMedium::StartScanning(
   // Active mode indicates that scan request packets will be sent to query for
   // Scan Response
   watcher_.ScanningMode(BluetoothLEScanningMode::Active);
+  ::winrt::Windows::Devices::Bluetooth::BluetoothSignalStrengthFilter filter;
+  filter.InRangeThresholdInDBm(nullptr);
+  filter.OutOfRangeThresholdInDBm(nullptr);
+  filter.OutOfRangeTimeout(TimeSpan(std::chrono::seconds(10)));
+  filter.SamplingInterval(TimeSpan(std::chrono::seconds(2)));
+  watcher_.SignalStrengthFilter(filter);
   watcher_.Start();
 
   while (!is_watcher_started_) {
     if (watcher_.Status() == BluetoothLEAdvertisementWatcherStatus::Created) {
       watcher_started_promise_.set_value(WatcherState::kStarted);
+      NEARBY_LOGS(INFO) << "Windows Ble StartScanning started.";
+      is_watcher_started_ = true;
       return true;
     }
   }
-  return true;
+
+  watcher_ = nullptr;
+  NEARBY_LOGS(ERROR) << "Windows Ble StartScanning: failed to start service_id="
+                     << service_id;
+  return false;
 }
 
 bool BleMedium::StopScanning(const std::string& service_id) {
   absl::MutexLock lock(&mutex_);
   NEARBY_LOGS(INFO) << "Windows Ble StopScanning: service_id=" << service_id;
 
-  is_watcher_stopped_ = false;
+  if (!is_watcher_started_) {
+    NEARBY_LOGS(WARNING) << "BLE scanning is not running.";
+    return true;
+  }
 
   watcher_stopped_promise_ = std::promise<WatcherState>();
 
@@ -266,15 +292,20 @@ bool BleMedium::StopScanning(const std::string& service_id) {
 
   watcher_.Stop();
 
-  while (!is_watcher_stopped_) {
+  while (is_watcher_started_) {
     if (watcher_.Status() == BluetoothLEAdvertisementWatcherStatus::Stopped) {
       watcher_stopped_promise_.set_value(WatcherState::kStopped);
       watcher_.Stopped(watcher_token_);
       watcher_.Received(advertisement_received_token_);
+      watcher_ = nullptr;
+      is_watcher_started_ = false;
       return true;
     }
   }
-  return true;
+
+  NEARBY_LOGS(ERROR) << "Windows Ble StopScanning: failed to stop service_id="
+                     << service_id;
+  return false;
 }
 
 bool BleMedium::StartAcceptingConnections(const std::string& service_id,
@@ -412,7 +443,6 @@ void BleMedium::WatcherHandler(
         NEARBY_LOGS(ERROR) << "Nearby BLE Medium start scanning operation was "
                               "successfully completed or serviced.";
         watcher_started_promise_.set_value(WatcherState::kStarted);
-        is_watcher_started_ = true;
       }
       if (watcher_.Status() == BluetoothLEAdvertisementWatcherStatus::Stopped) {
         NEARBY_LOGS(ERROR) << "Nearby BLE Medium stop scanning operation was "
@@ -420,7 +450,6 @@ void BleMedium::WatcherHandler(
         watcher_stopped_promise_.set_value(WatcherState::kStopped);
         watcher_.Stopped(watcher_token_);
         watcher_.Received(advertisement_received_token_);
-        is_watcher_stopped_ = true;
       } else {
         NEARBY_LOGS(ERROR)
             << "Nearby BLE Medium scanning failed due to unknown errors.";
@@ -485,13 +514,11 @@ void BleMedium::WatcherHandler(
     default:
       if (watcher_.Status() == BluetoothLEAdvertisementWatcherStatus::Started) {
         watcher_started_promise_.set_value(WatcherState::kStarted);
-        is_watcher_started_ = true;
       }
       if (watcher_.Status() == BluetoothLEAdvertisementWatcherStatus::Stopped) {
         watcher_stopped_promise_.set_value(WatcherState::kStopped);
         watcher_.Stopped(watcher_token_);
         watcher_.Received(advertisement_received_token_);
-        is_watcher_stopped_ = true;
       } else {
         NEARBY_LOGS(ERROR)
             << "Nearby BLE Medium scanning failed due to unknown errors.";
@@ -508,7 +535,6 @@ void BleMedium::AdvertisementReceivedHandler(
   // Handle all BLE advertisements and determine whether the BLE Medium
   // Advertisement Scan Response packet (containing Copresence UUID 0xFEF3 in
   // 0x16 Service Data) has been received in the handler
-  absl::MutexLock lock(&peripheral_map_mutex_);
   BluetoothLEAdvertisement advertisement = args.Advertisement();
 
   for (BluetoothLEAdvertisementDataSection service_data :
@@ -543,16 +569,12 @@ void BleMedium::AdvertisementReceivedHandler(
           std::make_unique<BlePeripheral>();
       peripheral->SetName(peripheral_name);
       peripheral->SetAdvertisementBytes(advertisement_data);
-      if (peripheral_map_.contains(peripheral_name)) {
-        if (peripheral_map_[peripheral_name]->GetAdvertisementBytes(
-                service_id_) == advertisement_data) {
-          return;
-        }
-      }
-
       BlePeripheral* peripheral_ptr = peripheral.get();
 
-      peripheral_map_.emplace(peripheral_name, std::move(peripheral));
+      {
+        absl::MutexLock lock(&peripheral_map_mutex_);
+        peripheral_map_[peripheral_name] = std::move(peripheral);
+      }
 
       // Received Fast Advertisement packet
       if (unconsumed_buffer_length <= 27) {
